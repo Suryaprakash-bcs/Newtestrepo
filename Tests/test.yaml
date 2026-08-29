@@ -1,0 +1,418 @@
+meta:
+  name: "VA01_Create_Sales_Order_Demo"
+  # RS4, not TS4: RS4 is public, so the same demo works from the deployed UI.
+  system: RS4
+  connection: "RS4"
+  client: "001"
+  # MUST be a DIALOG user. sap-testdata is USTYP=S (service) and CANNOT log on
+  # interactively — it is for the ADT extraction only. BRINDHA also works.
+  user: "${user}"
+  mode: auto
+  password: "${password}"
+  # DEMO SWITCH — TURN THIS OFF FOR A REAL BATCH. Draws SAP's own red frame
+  # (GuiVComponent.Visualize) around every element the run touches, so a human
+  # watching the session can see what the automation is doing. It costs an
+  # extra COM round trip PLUS the dwell below on EVERY acted-on element:
+  # ~15 elements per order, so ~+6s per order — about +18s across these 3 rows,
+  # and roughly +20 MINUTES on a 200-row batch. It also mutates what a live
+  # viewer sees. Worth it in front of a customer, never in a nightly run.
+  visualize: true
+  # How long the frame is HELD BEFORE each action. The default 300ms is at the
+  # edge of perceptible; 400 reads better on a projector. Ignored entirely when
+  # visualize is false, so a normal run pays nothing for this line.
+  visualize_dwell_ms: 400
+  # WITHOUT THIS THE RUN DIES AT 120 SECONDS. ScriptMeta.Timeout defaults to 120
+  # (SapScript.cs:154) and CancelAfter fires once at run start, so it is a hard
+  # wall-clock on the WHOLE run, not per step. Measured ~8-15s per order, so the
+  # default caps you at roughly 10 rows — and on timeout the top-level write is
+  # never reached, leaving orders created in SAP and recorded nowhere.
+  timeout: 3600
+  tags: ["demo", "test-data-studio"]
+  # "saplogon" expands to user=sunny system=RS4 connection=RS4 client=001.
+  # The "RS4" alias expands with system/connection/client all EMPTY — verified live.
+  # vault: "saplogon"
+
+variables:
+  password: "${password}"
+  user: "${user}"
+  # Points at the ACTUAL download. Test Data Studio names its file
+  # <ENTITY>_<SID>_<TODAY>.xlsx, so this line goes stale the next time you
+  # export and the run dies with "Excel file not found".
+  # This bit us on 2026-08-23: this line still said testdata.xlsx (an OLDER
+  # export with different headers and no QUANTITY column) while the new VBRK
+  # download sat unread in Downloads. The script was reading a different file
+  # than the one on screen. Check this line against the file you just
+  # downloaded EVERY time.
+  # For a customer demo, rename the download to testdata.xlsx and point this
+  # back at that stable name — one rename beats editing this file on stage.
+  excel_path: "$excel_path"
+  # Kept only for the opening log line. It CANNOT be used on the datasource or
+  # write steps: `sheet` does not interpolate ${...} there (verified — it fails
+  # with "There isn't a worksheet named '${excel_sheet}'"), so both hardcode
+  # "Data" — the sheet the exporter writes. The second sheet, "Query", holds the
+  # provenance: question, SQL, system, row count, timestamp.
+  excel_sheet: "Data"
+  # Per-row, DERIVED — not a fixed value any more. Each iteration captures the
+  # integer part of that row's QUANTITY into this, so KWMENG only ever receives
+  # digits. See the decimal-trap guard in S3 for why the raw cell is not used.
+  order_qty: ""
+  # Where the per-row evidence screenshots land. BACKSLASHES on purpose: this
+  # same value is handed to cmd.exe by the mkdir step below, and cmd's mkdir
+  # rejects forward slashes (it parses "/" as a switch). .NET accepts either,
+  # so one spelling serves both and there is no second copy to drift.
+  shot_dir: "$screenshot_dir"
+  # Customer PO number (VBKD-BSTKD). A literal makes every order created by this
+  # run findable afterwards in VA05.
+  cust_reference: "TDS-DEMO"
+  today_date: ""
+  yesterday_date: ""
+  status_text: ""
+  order_number: ""
+  results: []
+
+steps:
+  # ── S0 · make sure the evidence folder exists ─────────────────────────────
+  # `screenshot:` REFUSES to run when its parent directory is missing — a
+  # deliberate loud failure so an explicit path never silently dumps into temp.
+  # allow_nonzero_exit is required, not optional: cmd.exe's mkdir exits 1 with
+  # "A subdirectory or file ... already exists", so without it this script would
+  # succeed once and then fail on every subsequent run.
+  - run:
+      cmd: 'mkdir "${shot_dir}"'
+      allow_nonzero_exit: true
+
+  - log: "Reading test data from ${excel_path} (sheet ${excel_sheet})"
+
+  # ── S1 · the extract ──────────────────────────────────────────────────────
+  # Bound BY HEADER NAME. `mapping` is a RENAME, NOT A FILTER: every header in
+  # the sheet becomes a key on the row, and a header with no mapping entry keeps
+  # its OWN name as the key (DataSourceStepExecutor.cs:193-204). So a column
+  # nobody mapped is still reachable: with no mapping entry, QUANTITY would
+  # arrive as ${_item.QUANTITY}.
+  # CAREFUL, the rename REPLACES the key, it does not add an alias — QUANTITY is
+  # mapped to `quantity` below, so ${_item.QUANTITY} no longer resolves and
+  # ${_item.quantity} is the only spelling that works.
+  # Everything this script depends on is named explicitly anyway: a declared
+  # binding documents the dependency and absorbs a header rename in one place.
+  # Unmapped columns also survive the write-back: `source:` + `update_columns:`
+  # touches only the three result columns (see the warning on the write step).
+  - datasource:
+      type: "excel"
+      path: "${excel_path}"
+      # NOTE: sheet does NOT interpolate ${...} (path does). Must be a literal.
+      sheet: "Data"
+      # Bound to WHATEVER THE EXPORT ACTUALLY WROTE IN ROW 1 — read the sheet,
+      # never assume. These are this extract's headers, checked against
+      # VBAK_TS4_20260823.xlsx on 2026-08-23:
+      #   SALES_ORDER_NUMBER ORDER_TYPE SALES_ORG DISTRIBUTION_CHANNEL DIVISION
+      #   SOLD_TO_PARTY MATERIAL QUANTITY
+      #
+      # THREE DIFFERENT HEADER SETS IN TWO DAYS — this is not a stable contract:
+      #   2026-08-22 VBAK/RS4  raw SAP names   AUART VKORG VTWEG SPART KUNNR
+      #   2026-08-23 VBRK/RS4  short aliases   ORDER_TYPE SALES_ORG DISTR_CHANNEL SOLD_TO
+      #   2026-08-23 VBAK/TS4  long aliases    DISTRIBUTION_CHANNEL SOLD_TO_PARTY
+      # The model chooses its own aliases per question, so re-check this block
+      # against row 1 of EVERY new download before running.
+      #
+      # A mismatch is not silent, but it fails in two different ways depending
+      # on the field. A mapped header that is absent leaves the key MISSING from
+      # the row, so ${_item.x} is an UNRESOLVED VARIABLE and the run stops with
+      # "A ${…} value in the script was never given a value" — which is what
+      # half-updating this block produced on 2026-08-23. The not_empty asserts
+      # below only catch the other case, a header that exists but is blank.
+      mapping:
+        order_type: "ORDER_TYPE"
+        sales_org: "SALES_ORG"
+        dist_channel: "DISTRIBUTION_CHANNEL"
+        division: "DIVISION"
+        sold_to_party: "SOLD_TO_PARTY"
+        material: "MATERIAL"
+        # ⚠ IN THIS EXTRACT, QUANTITY IS A REAL SAP FIGURE, NOT A TEST VALUE.
+        # The Query sheet shows it is `VBAP~KWMENG AS QUANTITY` — the quantity
+        # already ordered on the source document. That is exactly what the
+        # yesterday's version of this comment warned against binding to.
+        # It is tolerated here ONLY because every row happens to be 1, and
+        # because the guard in S3 refuses any value SAP could misread. If you
+        # want a chosen test quantity, add your own QUANTITY column in Test Data
+        # Studio instead of selecting KWMENG.
+        quantity: "QUANTITY"
+        # VBAK extract: the sales order is SALES_ORDER_NUMBER here. The previous
+        # VBRK extract called it SALES_ORDER and also carried BILLING_DOC.
+        source_order: "SALES_ORDER_NUMBER"
+      variable: "orders"
+
+  - log: "Loaded ${orders.length} test data rows"
+
+  # ── S2 · dates for the PO date field ──────────────────────────────────────
+  - date:
+      op: "today"
+      format: "dd.MM.yyyy"
+      capture: "today_date"
+
+  - date:
+      op: "subtract"
+      base: "${today_date}"
+      input_format: "dd.MM.yyyy"
+      days: 1
+      format: "dd.MM.yyyy"
+      capture: "yesterday_date"
+
+  # ── S3 · one sales order per extracted row ────────────────────────────────
+  - foreach:
+      list: "${orders}"
+      var: "_item"
+      # A bad row must not abandon the rest of the batch. Failures surface in
+      # the log, and a blank Order Number cell beside an otherwise intact row is
+      # itself the signal.
+      #
+      # That is only true since the write became non-destructive. Under the old
+      # `data:`/`mode: update` write the failed row VANISHED: a failed step
+      # breaks out of the iteration body, so `collect` never ran for it, and the
+      # write then cleared the sheet and rewrote it from `collect` alone. A
+      # 3-row extract silently became a 2-row sheet on a green run. The
+      # completeness assert after the loop is the second half of this guard.
+      on_error: "continue"
+      steps:
+
+        - log: "---- ${_item.sold_to_party} / ${_item.material} in ${_item.sales_org}-${_item.dist_channel}-${_item.division} ----"
+
+        # Refuse to drive SAP with a half-empty row. A blank MATERIAL is a real
+        # possibility: a text/service order line carries no material number.
+        # `assert`, NOT `expect: variables:`. Proven live 2026-08-22: expect's
+        # supported keys are status_bar / fields / field / capture /
+        # element_present / transaction / screen_title (DslSchema.cs:190-195) —
+        # `variables` is NOT one of them, so it parses silently and asserts
+        # NOTHING. An empty value, and even a variable that does not exist, both
+        # reported "All expectations met". assert with operator: not_empty
+        # genuinely fails. Same bug class the engine already fixed for three
+        # other expect keys on 2026-07-28.
+        - assert:
+            value: "${_item.order_type}"
+            operator: "not_empty"
+            message: "Row has no ORDER_TYPE — refusing to drive VA01"
+        - assert:
+            value: "${_item.sales_org}"
+            operator: "not_empty"
+            message: "Row has no SALES_ORG — refusing to drive VA01"
+        - assert:
+            value: "${_item.sold_to_party}"
+            operator: "not_empty"
+            message: "Row has no SOLD_TO — refusing to drive VA01"
+        - assert:
+            value: "${_item.material}"
+            operator: "not_empty"
+            message: "Row has no MATERIAL — a text/service line cannot post here"
+        # ⚠ THE DECIMAL TRAP. This sheet's QUANTITY is VBAP~KWMENG, which SAP
+        # renders with three decimals: the cell reads "1.000", meaning ONE.
+        # Typed into KWMENG verbatim, what SAP stores depends on the logon
+        # user's decimal notation (SU3 → Defaults):
+        #     1,234,567.89  →  "1.000" is 1
+        #     1.234.567,89  →  "1.000" is ONE THOUSAND
+        # The same three characters are either 1 piece or 1000 pieces, and both
+        # save without complaint. That is a silently wrong sales order.
+        #
+        # So: accept only a plain integer, optionally with SAP's exact ".000",
+        # and type the INTEGER PART. Anything else — "1.500", "1,000", "2.5" —
+        # is refused rather than guessed at, because a real fractional quantity
+        # cannot be passed safely without knowing the notation setting.
+        - assert:
+            value: "${_item.quantity}"
+            operator: "matches"
+            expected: '^[0-9]+(\.000)?$'
+            message: "QUANTITY is \"${_item.quantity}\" — refusing to type a value SAP could read as a different number. Expected a whole number (SAP's trailing .000 is fine)."
+
+        # Strip SAP's decimals so KWMENG receives digits only, never a separator
+        # whose meaning depends on a user setting.
+        - capture:
+            source: "${_item.quantity}"
+            regex: '^([0-9]+)'
+            group: 1
+            variable: "order_qty"
+
+        - transaction: "/nVA01"
+
+        # Initial screen — order type + sales area.
+        - fill:
+            "/app/con[0]/ses[0]/wnd[0]/usr/ctxtVBAK-AUART": "${_item.order_type}"
+            "/app/con[0]/ses[0]/wnd[0]/usr/ctxtVBAK-VKORG": "${_item.sales_org}"
+            "/app/con[0]/ses[0]/wnd[0]/usr/ctxtVBAK-VTWEG": "${_item.dist_channel}"
+            "/app/con[0]/ses[0]/wnd[0]/usr/ctxtVBAK-SPART": "${_item.division}"
+
+        - press: "Enter"
+
+        - fill:
+            "/app/con[0]/ses[0]/wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/subPART-SUB:SAPMV45A:4701/ctxtKUAGV-KUNNR": "${_item.sold_to_party}"
+
+        # NOTE: the original script carried `retry: 3` / `delay: 1` on these two
+        # fills. The parser reports them as unknown properties and IGNORES them —
+        # verified live — so they gave a false sense of resilience. Removed rather
+        # than left in place looking like protection that was never there.
+        # Ship-to = sold-to. ASSUMED, not extracted: the sheet carries no
+        # ship-to column at all (BILLING_DOC SALES_ORDER ORDER_TYPE SALES_ORG
+        # DISTR_CHANNEL DIVISION SOLD_TO MATERIAL QUANTITY), so nothing in it
+        # evidences this. It holds for these test customers
+        # and VA01 defaults ship-to from sold-to anyway. Add KUNWE to the
+        # extract if a customer ever asks where this came from.
+        - fill:
+            "/app/con[0]/ses[0]/wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/subPART-SUB:SAPMV45A:4701/ctxtKUWEV-KUNNR": "${_item.sold_to_party}"
+
+        - fill:
+            "/app/con[0]/ses[0]/wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/txtVBKD-BSTKD": "${cust_reference}"
+
+        - fill:
+            "/app/con[0]/ses[0]/wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/ctxtVBKD-BSTDK": "${yesterday_date}"
+
+        # First item line: material + quantity, BOTH from the row.
+        - fill:
+            "/app/con[0]/ses[0]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/subSUBSCREEN_TC:SAPMV45A:4900/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/ctxtRV45A-MABNR[1,0]": "${_item.material}"
+
+        - fill:
+            "/app/con[0]/ses[0]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/subSUBSCREEN_TC:SAPMV45A:4900/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtRV45A-KWMENG[3,0]": "${order_qty}"
+
+        - press: "Enter"
+
+        - press:
+            id: "/app/con[0]/ses[0]/wnd[0]/tbar[0]/btn[11]"
+            label: "Save"
+
+        # Let SAP actually POST the message before we read it. This is the only
+        # sleep in the script and the only place a wait buys accuracy — the
+        # status bar is what every gate below trusts, and reading it a beat too
+        # early is how a saved order reports as nothing. No speculative sleeps
+        # anywhere else: the run is green without them and each one costs a
+        # second PER ROW (a 200-row batch pays 200s for this single line).
+        - sleep: 1
+
+        - capture:
+            id: "/app/con[0]/ses[0]/wnd[0]/sbar"
+            variable: "status_text"
+
+        # EVIDENCE — and note WHERE this sits: BEFORE the asserts, not after.
+        # Under `on_error: continue` a failing assert abandons the rest of the
+        # iteration body, so a screenshot placed below the gates would only ever
+        # exist for rows that SUCCEEDED — evidence for exactly the rows nobody
+        # needs it for. Here, a row that SAP rejected still leaves a picture of
+        # the screen that rejected it.
+        #
+        # Keyed on _source_row, NOT ${order_number}: order_number is empty
+        # precisely when the save failed, so every failed row would write to the
+        # same filename and overwrite the previous failure's evidence.
+        # _source_row is always present — the same key the write-back uses.
+        #
+        # .jpg, not .png: these come back around 5MB as PNG, so a 200-row batch
+        # would be over a gigabyte of screenshots.
+        - screenshot:
+            path: "${shot_dir}\\row${_item._source_row}.jpg"
+            window: "wnd[0]"
+
+        # Gate on the MESSAGE before trusting any digits in it. The capture
+        # below takes the first digit run anywhere in the status bar, so a
+        # REJECTED save whose message happens to contain a number would produce
+        # a non-empty "order number" and sail through the not_empty gate:
+        #   "Credit limit for customer 0000000202 exceeded"  -> 0000000202
+        #   "Item 000010 has no schedule lines"              -> 000010
+        #   "Delivery date 24.08.2026 cannot be met"         -> 24
+        # Each of those would be written into the sheet as a fabricated order
+        # number. Anchoring the regex to the success text closes it.
+        - assert:
+            value: "${status_text}"
+            operator: "contains"
+            expected: "has been saved"
+            message: "SAP did not confirm a save — status bar said: ${status_text}"
+
+        - capture:
+            source: "${status_text}"
+            regex: "(\\d+) has been saved"
+            group: 1
+            variable: "order_number"
+
+        # The success gate. A `press` that SAP REJECTS still reports "passed" —
+        # proven live 2026-08-22: a full 2-row run finished STATUS=passed, wrote
+        # its results back, and created ZERO orders, because Save landed on
+        # "Choose a valid function" while a modal held focus and order_number
+        # captured as "". Without this step a 200-row nightly batch can report
+        # success having posted nothing. With on_error: continue, a row that did
+        # not produce an order number now fails visibly and the next row runs.
+        - assert:
+            value: "${order_number}"
+            operator: "not_empty"
+            message: "No order number in the status bar — SAP created nothing for this row"
+
+        - log: "${_item.material} -> order ${order_number} — ${status_text}"
+
+        # `_source_row` is the real write-back key: the datasource stamps every
+        # row it reads with the Excel row it came from
+        # (DataSourceStepExecutor.cs:236). That beats keying on a data column —
+        # it stays correct even when the extract repeats a value, which it does
+        # (one 100-row export carried a single material; add POSNR to the query
+        # and VBELN repeats too). No S.No column needed.
+        #
+        # Only the three result fields are collected now. Everything the
+        # customer wants to read — material, sold-to, sales area — is ALREADY in
+        # the sheet and is no longer overwritten, so re-emitting it here would
+        # just be a second copy that could drift from the first.
+        - collect:
+            into: "results"
+            value:
+              _source_row: "${_item._source_row}"
+              ORDER_NUMBER: "${order_number}"
+              SAP_MESSAGE: "${status_text}"
+              EXECUTED_AT: "${today_date}"
+
+  # ── S4 · write the order numbers back beside the row that produced them ───
+  - log: "Writing ${results.length} results back to ${excel_path}"
+
+  # ⚠ THIS MUST BE `source:` + `update_columns:`, NOT `data:` + `mode: update`.
+  #   Verified in the engine source 2026-08-23:
+  #   - `mode: "update"` IS NOT A MODE. WriteStepExecutor.cs:146 only tests for
+  #     "append"; anything else falls through to :172 `ws.Clear()` and rewrites
+  #     the sheet from the collect payload. The extract's own header row is
+  #     destroyed, so a SECOND run of this script reads a sheet with no
+  #     ORDER_TYPE/SALES_ORG/SOLD_TO/MATERIAL/QUANTITY columns, binds nothing,
+  #     and creates zero orders.
+  #     Rehearse-then-demo on the same file and the demo IS the second run.
+  #   - `key:` was never read by any write path. It survived validation only
+  #     because `press` also declares a `key` property and the ignored-key
+  #     warning checks the UNION of all step types (DslSchema.cs:67) — so a dead
+  #     property produced zero warnings. Same family as `expect: variables:`.
+  #   `source:` + `update_columns:` takes BatchUpdateExcel (:209) instead, which
+  #   matches on `_source_row` and calls ResolveColumnNumber — that appends any
+  #   header it cannot find (:228) and leaves every existing column untouched.
+  #   Non-destructive and idempotent: re-running just overwrites the three
+  #   result columns.
+  - write:
+      type: "excel"
+      path: "${excel_path}"
+      # NOTE: sheet does NOT interpolate ${...} (path does). Must be a literal.
+      # On the WRITE side a ${...} here is worse than on the read side: it
+      # silently CREATES a sheet named "${excel_sheet}".
+      sheet: "Data"
+      source: "${results}"
+      # payload field -> column header in the sheet. Created if absent, matched
+      # case-insensitively if already there.
+      update_columns:
+        ORDER_NUMBER: "Order Number"
+        SAP_MESSAGE: "SAP Message"
+        EXECUTED_AT: "Executed At"
+
+  # A foreach whose rows partly failed returns Status="warning", and the overall
+  # run status is computed from "error"/"failed" ONLY (ScriptEngine.cs:930-932),
+  # so 3 rows with 1 failure reports PASSED. This is the gate that makes a short
+  # batch a real failure — never tell the customer "3 for 3" off a green run
+  # alone.
+  - assert:
+      value: "${results.length}"
+      operator: "=="
+      expected: "${orders.length}"
+      message: "Only ${results.length} of ${orders.length} rows produced an order — check the log for the failed row"
+
+  - log: "VA01 batch complete — ${excel_path} now carries the order numbers"
+  # - transaction: /NEX
+  - sleep: 5
+
+output:
+  summary:
+    system: "RS4"
+    rows_processed: "${results.length}"
+    reference_date: "${yesterday_date}"
+    excel_file: "${excel_path}"
