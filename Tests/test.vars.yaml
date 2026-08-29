@@ -1,0 +1,38 @@
+# Variables for this script — auto-extracted during git push.
+# Override at runtime via the Vars tab or execution API params.
+password: "${password}"
+user: "${user}"
+# Points at the ACTUAL download. Test Data Studio names its file
+# <ENTITY>_<SID>_<TODAY>.xlsx, so this line goes stale the next time you
+# export and the run dies with "Excel file not found".
+# This bit us on 2026-08-23: this line still said testdata.xlsx (an OLDER
+# export with different headers and no QUANTITY column) while the new VBRK
+# download sat unread in Downloads. The script was reading a different file
+# than the one on screen. Check this line against the file you just
+# downloaded EVERY time.
+# For a customer demo, rename the download to testdata.xlsx and point this
+# back at that stable name — one rename beats editing this file on stage.
+excel_path: "$excel_path"
+# Kept only for the opening log line. It CANNOT be used on the datasource or
+# write steps: `sheet` does not interpolate ${...} there (verified — it fails
+# with "There isn't a worksheet named '${excel_sheet}'"), so both hardcode
+# "Data" — the sheet the exporter writes. The second sheet, "Query", holds the
+# provenance: question, SQL, system, row count, timestamp.
+excel_sheet: "Data"
+# Per-row, DERIVED — not a fixed value any more. Each iteration captures the
+# integer part of that row's QUANTITY into this, so KWMENG only ever receives
+# digits. See the decimal-trap guard in S3 for why the raw cell is not used.
+order_qty: ""
+# Where the per-row evidence screenshots land. BACKSLASHES on purpose: this
+# same value is handed to cmd.exe by the mkdir step below, and cmd's mkdir
+# rejects forward slashes (it parses "/" as a switch). .NET accepts either,
+# so one spelling serves both and there is no second copy to drift.
+shot_dir: "$screenshot_dir"
+# Customer PO number (VBKD-BSTKD). A literal makes every order created by this
+# run findable afterwards in VA05.
+cust_reference: "TDS-DEMO"
+today_date: ""
+yesterday_date: ""
+status_text: ""
+order_number: ""
+results: []

@@ -2,7 +2,7 @@ meta:
   name: "VA01_Create_Sales_Order_Demo"
   # RS4, not TS4: RS4 is public, so the same demo works from the deployed UI.
   system: RS4
-  connection: "RS4"
+  connection: "R4"
   client: "001"
   # MUST be a DIALOG user. sap-testdata is USTYP=S (service) and CANNOT log on
   # interactively — it is for the ADT extraction only. BRINDHA also works.
