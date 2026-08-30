@@ -1,54 +1,47 @@
 meta:
-  name: "RS4_refresh"
-  system: ${systemname}
-  connection: ${systemname}
-  client: ${clientid}
-  user: ${User_name}
-  password: ${password}
+  name: "recorded-script"
+  vault: "RS4"                             # vault alias — the only line needed for credentials
   mode: auto
-  tags: [STMS]
-variables:
-  folder_path: "C:\\Replay_Studio_Engine\\ReplayStudio_Files\\YAML\\Screenshot"
+  tags: [recorded]
+  recorded_at: "2026-08-30T11:26:54.1683192+00:00"
+  # Recorded from RS4 · client 001 · "RS4".
+  #
+  # Optional overrides — auto-populated from the vault entry unless set here:
+  # system: "RS4"                       # 3-letter SID
+  # connection: "RS4"                   # SAP Logon display name
+  # client: "001"                       # SAP client
+  # user: "DEVELOPER"                   # SAP username
+  # password: "${vault.password}"       # already the default when vault is set
+  # multi_logon: keep-others            # keep-others (default) | end-others | terminate
+
+# Short variables exposed when meta.vault is set:
+#   ${vault.username}   ${vault.password}   ${vault.client}
+#   ${vault.connection} ${vault.system_id}  ${vault.host}
+#   ${vault.sysnr}      ${vault.language}   ${vault.meta.<custom>}
+
+variables: {}
+
 steps:
-# STMS
-  - transaction: "/nSTMS"
-    comment: "Open transaction STMS"
-  - screenshot:
-      path: "${folder_path}\\${systemname}\\STMS_one_001.jpg"
+  - transaction: "/nVA01"
+    comment: "Open transaction VA01"
+  - fill:
+      /app/con[0]/ses[0]/wnd[0]/usr/ctxtVBAK-AUART: "or"
+      /app/con[0]/ses[0]/wnd[0]/usr/ctxtVBAK-VKORG: "p100"
+      /app/con[0]/ses[0]/wnd[0]/usr/ctxtVBAK-VTWEG: "p1"
+      /app/con[0]/ses[0]/wnd[0]/usr/ctxtVBAK-SPART: "p1"
+    comment: "Enter \"or\" in Sales Document Type; Enter \"p100\" in Sales Organization; Enter \"p1\" in Distribution Channel; Enter \"p1\" in Division"
+  - press: "Enter"
+    comment: "Press Enter"
+  - fill:
+      "/app/con[0]/ses[0]/wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/txtVBKD-BSTKD": "test"
+      "/app/con[0]/ses[0]/wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/ctxtVBKD-BSTDK": "30.08.2026"
+      "/app/con[0]/ses[0]/wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/subPART-SUB:SAPMV45A:4701/ctxtKUAGV-KUNNR": "202"
+      "/app/con[0]/ses[0]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/subSUBSCREEN_TC:SAPMV45A:4900/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/ctxtRV45A-MABNR[1,0]": "2000002133"
+      "/app/con[0]/ses[0]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/subSUBSCREEN_TC:SAPMV45A:4900/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtRV45A-KWMENG[3,0]": "1"
+    comment: "Enter \"test\" in VBKD-BSTKD; Enter \"30.08.2026\" in VBKD-BSTDK; Enter \"202\" in KUAGV-KUNNR; Enter \"2000002133\" in RV45A-MABNR (row 1); Enter \"1\" in RV45A-KWMENG (row 1)"
+  - press: "F2"
+    comment: "Press F2"
   - press:
-      id: "/app/con[0]/ses[0]/wnd[0]/tbar[1]/btn[5]"
-      label: "Import Overview"
-    comment: "Press Import Overview"
-  - screenshot:
-      path: "${folder_path}\\${systemname}\\STMS_002.jpg"
-  - press:
-      id: "/app/con[0]/ses[0]/wnd[0]/tbar[0]/btn[3]"
-      label: "Back"
-    comment: "Press Back"
-  - press:
-      id: "/app/con[0]/ses[0]/wnd[0]/tbar[1]/btn[19]"
-      label: "Transport Routes"
-    comment: "Press Transport Routes"
-  - screenshot:
-      path: "${folder_path}\\${systemname}\\STMS_003.jpg"
-#SCC4
-  - transaction: "/nSCC4"
-    comment: "Open transaction SCC4"
-  - screenshot:
-      path: "${folder_path}\\${systemname}\\SCC4_004.jpg"
-#Al11
-  - transaction: "/nAL11"
-    comment: "Open transaction AL11"
-  - screenshot:
-      path: "${folder_path}\\${systemname}\\AL11_005.jpg"
-#SHMM
-  - transaction: "/nSHMM"
-    comment: "Open transaction SHMM"
-  - screenshot:
-      path: "${folder_path}\\${systemname}\\SHMM_006.jpg"
-#RZ12
-  - transaction: "/nRZ12"
-    comment: "Open transaction RZ12"
-  - screenshot:
-      path: "${folder_path}\\${systemname}\\RZ12_007.jpg"
-  - transaction: /nex
+      id: "/app/con[0]/ses[0]/wnd[0]/tbar[0]/btn[11]"
+      label: "Save"
+    comment: "Press Save"
