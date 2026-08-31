@@ -22,26 +22,15 @@ meta:
 variables: {}
 
 steps:
-  - transaction: "/nVA01"
-    comment: "Open transaction VA01"
-  - fill:
-      /app/con[0]/ses[0]/wnd[0]/usr/ctxtVBAK-AUART: "or"
-      /app/con[0]/ses[0]/wnd[0]/usr/ctxtVBAK-VKORG: "p100"
-      /app/con[0]/ses[0]/wnd[0]/usr/ctxtVBAK-VTWEG: "p1"
-      /app/con[0]/ses[0]/wnd[0]/usr/ctxtVBAK-SPART: "p1"
-    comment: "Enter \"or\" in Sales Document Type; Enter \"p100\" in Sales Organization; Enter \"p1\" in Distribution Channel; Enter \"p1\" in Division"
-  - press: "Enter"
-    comment: "Press Enter"
-  - fill:
-      "/app/con[0]/ses[0]/wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/txtVBKD-BSTKD": "test"
-      "/app/con[0]/ses[0]/wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/ctxtVBKD-BSTDK": "30.08.2026"
-      "/app/con[0]/ses[0]/wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/subPART-SUB:SAPMV45A:4701/ctxtKUAGV-KUNNR": "202"
-      "/app/con[0]/ses[0]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/subSUBSCREEN_TC:SAPMV45A:4900/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/ctxtRV45A-MABNR[1,0]": "2000002133"
-      "/app/con[0]/ses[0]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/subSUBSCREEN_TC:SAPMV45A:4900/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtRV45A-KWMENG[3,0]": "1"
-    comment: "Enter \"test\" in VBKD-BSTKD; Enter \"30.08.2026\" in VBKD-BSTDK; Enter \"202\" in KUAGV-KUNNR; Enter \"2000002133\" in RV45A-MABNR (row 1); Enter \"1\" in RV45A-KWMENG (row 1)"
-  - press: "F2"
-    comment: "Press F2"
+# STMS
+  - transaction: "/nSTMS"
+    comment: "Open transaction STMS"
+  - sleep: 3
   - press:
-      id: "/app/con[0]/ses[0]/wnd[0]/tbar[0]/btn[11]"
-      label: "Save"
-    comment: "Press Save"
+      id: "/app/con[0]/ses[0]/wnd[0]/tbar[1]/btn[5]"
+      label: "Import Overview"
+    comment: "Press Import Overview"
+  - sleep: 3
+  - transaction: /nex
+  
+
