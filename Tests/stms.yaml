@@ -1,6 +1,6 @@
 meta:
   name: "recorded-script"
-  vault: ""                             # vault alias — the only line needed for credentials
+  vault: "RS4"                             # vault alias — the only line needed for credentials
   mode: auto
   tags: [recorded]
   recorded_at: "2026-08-31T03:51:58.7143475+00:00"
