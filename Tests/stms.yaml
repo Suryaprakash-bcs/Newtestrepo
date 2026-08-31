@@ -1,0 +1,30 @@
+meta:
+  name: "recorded-script"
+  vault: ""                             # vault alias — the only line needed for credentials
+  mode: auto
+  tags: [recorded]
+  recorded_at: "2026-08-31T03:51:58.7143475+00:00"
+  # Recorded from RS4 · client 001 · "RS4".
+  #
+  # Optional overrides — auto-populated from the vault entry unless set here:
+  # system: "RS4"                       # 3-letter SID
+  # connection: "RS4"                   # SAP Logon display name
+  # client: "001"                       # SAP client
+  # user: "DEVELOPER"                   # SAP username
+  # password: "${vault.password}"       # already the default when vault is set
+  # multi_logon: keep-others            # keep-others (default) | end-others | terminate
+
+# Short variables exposed when meta.vault is set:
+#   ${vault.username}   ${vault.password}   ${vault.client}
+#   ${vault.connection} ${vault.system_id}  ${vault.host}
+#   ${vault.sysnr}      ${vault.language}   ${vault.meta.<custom>}
+
+variables: {}
+
+steps:
+  - transaction: "/nSTMS"
+    comment: "Open transaction STMS"
+  - press:
+      id: "/app/con[1]/ses[0]/wnd[0]/tbar[1]/btn[19]"
+      label: "Transport Routes"
+    comment: "Press Transport Routes"
